@@ -77,6 +77,43 @@ void init_lcd(void)
 
 }
 
+
+void rewrite_lcd(void)
+{
+	char init[5];
+
+	int i;
+	init[0] = 0x0C;
+	init[1] = 0x38;
+	init[2] = 0x06;
+	init[3] = 0x80;
+	//init[4] = 0x01;
+	INSTRUCTION_SELECT;
+	WRITE_LCD;
+	for(i=0;i<4;i++)
+	{
+		DATA_LCD(init[i]);
+		ENABLE_LCD;
+		_delay_ms(1);
+		DISABLE_LCD;
+		_delay_ms(1);
+	}
+}
+
+
+void clear_lcd(void)
+{
+	char cmd=0x01;
+	INSTRUCTION_SELECT;
+	WRITE_LCD;
+	DATA_LCD(cmd);
+	ENABLE_LCD;
+	_delay_ms(1);
+	DISABLE_LCD;
+	_delay_ms(1);
+}
+
+
 void next_line(void)
 {
 	char caracter = 0xC0;	

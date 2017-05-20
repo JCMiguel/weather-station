@@ -35,37 +35,41 @@
 #include "diskio.h"
 #include "error_checking.h"
 
+
 volatile unsigned char var=0;
-volatile unsigned char key=0;
-volatile unsigned char time2sd=0;
+volatile unsigned int key=0;
 volatile unsigned char ovf_tim1=0;	//Cantidad de OVF del Timer1
 volatile unsigned int ovf_nec;	//OVF necesarios.
 volatile unsigned char ovf_tim0=0;	//Cantidad de OVF del Timer0
 volatile unsigned char time=0;
 volatile unsigned char uno=0;
-volatile unsigned char tiempo[43];
+static volatile unsigned long int tiempo[45];
 volatile unsigned char ovfs[43]; //
 
 
 int main (void)
 {
 	//Para usos diversos.
-	unsigned char data[5];
-	unsigned short int counter, i=0, j=0, len1;
-	char laststate=0, state=0, nm=0;
-	int hume;
-	int tempe;
-	int wind;
+	static unsigned int data[6];
+	unsigned short int counter, i=0, j=0, len1, debug=0, clock=0;
+	unsigned char laststate=0, state=0, nm=0;
+	unsigned int hume;
+	unsigned int tempe=0;
+	unsigned int wind=0;
+	unsigned char checksum = 0;
+	unsigned int time2sd=0;
+	static int aux = 0;
+	static int FACTOR = 3;
 
 	//Para representación en LCD.
-	static char asciihume[5];
-	static char asciitempe[5];
-	static char asciiwind[2];
+	static char asciihume[7];
+	static char asciitempe[7];
+	static char asciiwind[10];
 	static char cadena1[] = {"H:"};
-	static char cadena2[] = {"% T:"};
-	static char cadena3[] = {"'C "};
+	static char cadena2[] = {"%  T:"};
+	static char cadena3[] = {"'C    "};
 	static char cadena4[] = {"V:"};
-	static char cadena5[] = {"Km/h  "};
+	static char cadena5[] = {"m/s  "};
 	static char jumplin[] = {"\n"};
 
 	static char asciires[5];
@@ -96,10 +100,10 @@ int main (void)
     	config_timer0;
 
 	//Valores iniciales del vector. Deberían ser cero, salvo para pruebas.
-	data[0]=2;
-	data[1]=0x84;
+	data[0]=0;//2;
+	data[1]=0;//0x84;
 	data[2]=0;
-	data[3]=0xAE;
+	data[3]=0;//0xAE;
 	init_ports();
 	//init_lcd();
 
@@ -111,7 +115,7 @@ int main (void)
 	  	lcd_send(cadinit[i]);
 	next_line();
 	check_operation_fat(res);
-	_delay_ms(1000);
+	_delay_ms(SLEEP);
 
 	//Montaje del sistema de archivos FAT.
 	res = pf_mount(&fs);
@@ -121,7 +125,8 @@ int main (void)
 	  	lcd_send(cadmnt[i]);
 	next_line();
 	check_operation_fat(res);
-	_delay_ms(1000);
+	_delay_ms(SLEEP);
+	clear_lcd();
 
 
 	while(1)
@@ -129,6 +134,7 @@ int main (void)
 		//Empieza comunicación con el sensor.
 	 	if(key==0)
 		{	key++;
+			var=0;
 
 			ovf_nec = DELAY_1s; //OVF a transcurrir antes de mostrar el resultado por pantalla.
 
@@ -147,7 +153,7 @@ int main (void)
 			start_timer1;
 		}
 
-		if(key==1)
+		if(key<(int)(DELAY_500ms/16))
 		{
 			state = PIND & 0x08;
 			if(state != laststate)
@@ -155,12 +161,12 @@ int main (void)
 				nm++;
 				laststate=state;
 			}
-			start_timer1;
+			//start_timer1;
 		}
 
 
-		//Ya pasó un segundo...
-		if(key==2 && time2sd<10)
+		//Ya pasó medio segundo...
+		if(key>=(int)(DELAY_500ms/16))
 		{
 			stop_int;
 			stop_timer0;
@@ -168,39 +174,73 @@ int main (void)
 			ovf_tim1=0;
 			ovf_tim0=0;
 			key = 0;
+			clock++;
 
 			//Proceso data
-			for(j=1;j<17;j++)
+			data[0]=0;
+			data[1]=0;
+			data[2]=0;
+			data[3]=0;
+
+			for(j=FACTOR;j<(FACTOR+41);j++)
 			{
-				//if((tiempo[j]*256+minitemp[j]) > UMBRAL)
+				aux = (j-FACTOR)/8;
 				if(tiempo[j] > UMBRAL)
-					data[(j-1)/8] |= 0x01;
-				data[(j-1)/8] <<= 1;
+					data[aux] += 1;
+				if((j-FACTOR)%8 != 7)
+					data[aux] <<= 1;
 			}
 
-
-			hume = data[0]; //& 0x7F;
+			hume = data[0] & 0x7F;
 			hume *= 256;
         		hume += data[1];
-        		hume /= 10; //divido por 80 porque se desplazó tres bits.
+        		hume /= 10; 	//Conservo la parte entera.
 
-			for(j=20;j<36;j++)
+			tempe = ((data[2]) * 256 + data[3]);
+        		tempe /= 10;	//Conservo la parte entera.
+
+			if(clock == 16)
 			{
-				//if((tiempo[j]*256+minitemp[j]) > UMBRAL)
-				if(tiempo[j] > UMBRAL)
-					data[(j-2)/8] |= 0x01;
-				data[(j-2)/8] <<= 1;
+				wind=(int)(Kte*((Kan*nm*Ran)/deltaT));
+				nm = 0;
+				clock = 0;
+				time2sd++;
+				//wind = time2sd;
 			}
+			//wind=Kte*nm/(N);
+			//wind=var;
+			//wind=F_CPU/1000000;
+			//wind=data[4];
+			//wind = 7%8;
 
-			tempe = data[2] & 0x7F;
-			tempe *= 256;
-        		tempe += data[3];
-        		tempe /= 10;	//Corrección del resultado.
-
-			wind=Kte*nm/(N);
+/*			checksum = data[0] + data[1] + data[2] + data[3];
+			if((checksum-(char)data[4] < 1) || (checksum-(char)data[4] > -1))
+				wind = 777;
+			else
+				wind = 0;
 
 			
-			init_lcd();
+/*
+			if(debug<34)
+			{
+				/*if(tiempo[debug] > UMBRAL)
+					wind = 1;
+				else
+					wind = 0;
+				//wind=tiempo[debug];
+				wind=(debug-2)/8;
+
+			}
+			else
+			{
+				debug=1;
+				//wind=tiempo[debug];
+				wind=-1;
+			}
+*/
+			
+			rewrite_lcd();
+			//clear_lcd();
 
 			len1=strlen(cadena1);
 			for (i=0; i< len1;i++)
@@ -239,13 +279,16 @@ int main (void)
 			for (i=0; i< len1;i++)
   				lcd_send(cadena5[i]);
 
-			nm = 0;
+			//nm = 0;
 			var = 0;
+			key = 0;
+
+			debug++;
 		}
 
 
 		//Time to SD Card!
-		if(time2sd == 10)
+		if(time2sd >= 10)
 		{
 			stop_int;
 			stop_timer0;
@@ -254,33 +297,33 @@ int main (void)
 			ovf_tim0=0;
 			key = 0;
 			time2sd = 0;
+			//clock = 0;
 
 			//Proceso data
-			for(j=1;j<17;j++)
+			data[0]=0;
+			data[1]=0;
+			data[2]=0;
+			data[3]=0;
+
+			for(j=FACTOR;j<(FACTOR+41);j++)
 			{
+				aux = (j-FACTOR)/8;
 				if(tiempo[j] > UMBRAL)
-					data[(j-1)/8] |= 0x01;
-				data[(j-1)/8] <<= 1;
+					data[aux] += 1;
+				if((j-FACTOR)%8 != 7)
+					data[aux] <<= 1;
 			}
-			hume = data[0]; //& 0x7F;
+
+			hume = data[0] & 0x7F;
 			hume *= 256;
         		hume += data[1];
-        		hume /= 10;
+        		hume /= 10; 	//Conservo la parte entera.
+
+			tempe = ((data[2]) * 256 + data[3]);
+        		tempe /= 10;	//Conservo la parte entera.
+
 			itoa(hume,asciihume,10);
-
-			for(j=20;j<36;j++)
-			{
-				if(tiempo[j] > UMBRAL)
-					data[(j-2)/8] |= 0x01;
-				data[(j-2)/8] <<= 1;
-			}
-			tempe = data[2] & 0x7F;
-			tempe *= 256;
-        		tempe += data[3];
-        		tempe /= 10;	//Corrección del resultado.
 			itoa(tempe,asciitempe,10);
-
-			wind=Kte*nm/(N);
 			itoa(wind,asciiwind,10);
 
 //ACá está lo de la SD.
@@ -291,119 +334,132 @@ int main (void)
 			  	lcd_send(cadopen[i]);
 			next_line();
 			check_operation_fat(res);
-			_delay_ms(1000);
+			_delay_ms(SLEEP);
+			if(!res)
+			{
+				//Me posiciono dentro del archivo.
+				//Leo el contenido del archivo.
+				init_lcd();
+				res = pf_read(auxcad,datawrite,&br);
+				 len1=strlen(cadread);
+				 for (i=0; i< len1;i++)
+				  	lcd_send(cadread[i]);
+				next_line();
+				check_operation_fat(res);
+				 _delay_ms(SLEEP);
 
-//Me posiciono dentro del archivo.
-//Leo el contenido del archivo.
-			init_lcd();
-			res = pf_read(auxcad,datawrite,&br);
-			 len1=strlen(cadread);
-			 for (i=0; i< len1;i++)
-			  	lcd_send(cadread[i]);
-			next_line();
-			check_operation_fat(res);
-			 _delay_ms(1000);
-//Regrabo lo que ya tiene.
-			init_lcd();
-			res = pf_write(auxcad,(UINT)datawrite,&br);
-			 len1=strlen(cadwrte);
-			 for (i=0; i< len1;i++)
-			  	lcd_send(cadwrte[i]);
-			next_line();
-			check_progress_bar(res);
-			 _delay_ms(1000);
+				//Regrabo lo que ya tiene.
+				init_lcd();
+				res = pf_write(auxcad,(UINT)datawrite,&br);
+				 len1=strlen(cadwrte);
+				 for (i=0; i< len1;i++)
+				  	lcd_send(cadwrte[i]);
+				next_line();
+				check_progress_bar(res);
+				 _delay_ms(PAUSE_BAR);
 
-//Escribiendo la SD
-			len1=strlen(cadena1);
-			 datawrite+=len1;
-			res = pf_write(cadena1,(UINT)len1,&br);
-			check_progress_bar(res);
-			 _delay_ms(1000);
+				//Escribiendo la SD
+				len1=strlen(cadena1);
+				 datawrite+=len1;
+				res = pf_write(cadena1,(UINT)len1,&br);
+				check_progress_bar(res);
+				 _delay_ms(PAUSE_BAR);
 
-			len1=strlen(asciihume);
-			 datawrite+=len1;
-			res = pf_write(asciihume,(UINT)len1,&br);
-			check_progress_bar(res);
-			 _delay_ms(1000);
+				len1=strlen(asciihume);
+				 datawrite+=len1;
+				res = pf_write(asciihume,(UINT)len1,&br);
+				check_progress_bar(res);
+				 _delay_ms(PAUSE_BAR);
 
-//Escribiendo la SD
-			len1=strlen(cadena2);
-			 datawrite+=len1;
-			res = pf_write(cadena2,(UINT)len1,&br);
-			check_progress_bar(res);
-			 _delay_ms(1000);
+				//Escribiendo la SD
+				len1=strlen(cadena2);
+				 datawrite+=len1;
+				res = pf_write(cadena2,(UINT)len1,&br);
+				check_progress_bar(res);
+				 _delay_ms(PAUSE_BAR);
 
-			len1=strlen(asciitempe);
-			 datawrite+=len1;
-			res = pf_write(asciitempe,(UINT)len1,&br);
-			check_progress_bar(res);
-			 _delay_ms(1000);
+				len1=strlen(asciitempe);
+				 datawrite+=len1;
+				res = pf_write(asciitempe,(UINT)len1,&br);
+				check_progress_bar(res);
+				 _delay_ms(PAUSE_BAR);
 
-			len1=strlen(cadena3);
-			 datawrite+=len1;
-			res = pf_write(cadena3,(UINT)len1,&br);
-			check_progress_bar(res);
-			 _delay_ms(1000);
+				len1=strlen(cadena3);
+				 datawrite+=len1;
+				res = pf_write(cadena3,(UINT)len1,&br);
+				check_progress_bar(res);
+				 _delay_ms(PAUSE_BAR);
 
-//Escribiendo el viento
-			len1=strlen(cadena4);
-			 datawrite+=len1;
-			res = pf_write(cadena4,(UINT)len1,&br);
-			check_progress_bar(res);
-			 _delay_ms(1000);
+				//Escribiendo el viento
+				len1=strlen(cadena4);
+				 datawrite+=len1;
+				res = pf_write(cadena4,(UINT)len1,&br);
+				check_progress_bar(res);
+				 _delay_ms(PAUSE_BAR);
 
-			len1=strlen(asciiwind);
-			 datawrite+=len1;
-			res = pf_write(asciiwind,(UINT)len1,&br);
-			check_progress_bar(res);
-			 _delay_ms(1000);
+				len1=strlen(asciiwind);
+				 datawrite+=len1;
+				res = pf_write(asciiwind,(UINT)len1,&br);
+				check_progress_bar(res);
+				 _delay_ms(PAUSE_BAR);
 
-			len1=strlen(cadena5);
-			 datawrite+=len1;
-			res = pf_write(cadena5,(UINT)len1,&br);
-			check_progress_bar(res);
-			 _delay_ms(1000);
+				len1=strlen(cadena5);
+				 datawrite+=len1;
+				res = pf_write(cadena5,(UINT)len1,&br);
+				check_progress_bar(res);
+				 _delay_ms(PAUSE_BAR);
 
-			len1=strlen(jumplin);
-			 datawrite+=len1;
-			res = pf_write(jumplin,(UINT)len1,&br);
-			check_progress_bar(res);
-			 _delay_ms(1000);
+				len1=strlen(jumplin);
+				 datawrite+=len1;
+				res = pf_write(jumplin,(UINT)len1,&br);
+				check_progress_bar(res);
+				 _delay_ms(PAUSE_BAR);
 
-//Cerrando el archivo.
-			res = pf_write(0, 0, &br);
-			check_progress_bar(res);
-			 _delay_ms(1000);
+				//Cerrando el archivo.
+				res = pf_write(0, 0, &br);
+				check_progress_bar(res);
+				 _delay_ms(SLEEP);
 
-			var = 0;
+				clear_lcd();
+				var = 0;
+
+		
+			}
+
 		}
+
 	}
+
+	return 1;
 }
 
 ISR(INT0_vect)    // External Interrupt 0 ISR  Interrupt Service Routine
 {
-	stop_timer0;
+	stop_timer1;
 
-	if(var>1)
+	/*if(var>1)
 	{
 		//timer[var-1]=TCNT0;   //
 		tiempo[var-1]=ovf_tim0; //
-	}
+	}*/
+
+	tiempo[var]=TCNT1; //H*256+TCNT1L;
 
 	var++;	//cuenta un pulso.
 
-	ovf_tim0=0;
-	TCNT0=0;
-	start_timer0; //Arranco el timer de nuevo
+	//ovf_tim0=0;
+	TCNT1=0;
+	//TCNT1L=0;
+	start_timer1; //Arranco el timer de nuevo
 }
 
 ISR(TIMER1_OVF_vect)
 {
-	if(ovf_tim1==ovf_nec)
-	{
-		key++;	time2sd++;
-	}
-	ovf_tim1++;
+	//if(ovf_tim1==ovf_nec)
+	//{
+		key++;	//time2sd++;
+	//}
+	//ovf_tim1++;
 }
 
 ISR(TIMER0_OVF_vect)

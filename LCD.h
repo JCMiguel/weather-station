@@ -92,6 +92,8 @@ typedef struct{
 
 void init_ports(void);
 void init_lcd(void);
+void rewrite_lcd(void);
+void clear_lcd(void);
 void lcd_send(unsigned char);
 void next_line(void);
 

@@ -63,17 +63,21 @@
 #define config_int	EICRA = (1<<ISC01) | (1<<ISC00)
 
 
+//Constantes gráficas
+#define SLEEP		500
+#define PAUSE_BAR	150
 //Constantes relacionadas a los puertos.
-#define PB	PORTD
-#define SENS 	2
+#define PB		PORTD
+#define SENS 		2
 //Constantes de configuración
 #define DELAY_1s	(F_CPU/65536)
 #define DELAY_500ms	((0.5*F_CPU)/65536)
-#define DELAY_2ms	65536-16000	//valor que hay que cargar en TCNT.
-#define DELAY_30us	65536-240	//valor que hay que cargar en TCNT.
 #define MAXTIMINGS 	85	//¿Estoy usando esto...?
-#define UMBRAL 		2//((80*F_CPU/1000000)/(256)) //Empírico.
-#define N 	8	 //Cantidad de marcas del encoder
-#define Kte	2	 //d*2*pi*3600 [d = 10cm]
+#define UMBRAL 		800UL	//((80*F_CPU/1000000)/(256)) //Empírico.
+#define N 		8	 	//Cantidad de marcas del encoder
+#define Kan		45	 	//Constante del anemómetro: ángulo[grados]/marca.
+#define Ran		0.100	 	//Radio de giro, largo de las paletas [m].
+#define deltaT		0.500		//Ventana de tiempo para el sensado [s].
+#define Kte		1.000/6.000	//Corrección empírica aproximada debido a la inercia y pérdidas.
 #endif	//CONFIG_H
 
